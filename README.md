@@ -14,7 +14,7 @@ MCP (Model Context Protocol) server plugin for 1C:EDT, enabling AI assistants (C
 - 🔖 **Bookmarks & Tasks** - Access bookmarks and TODO/FIXME markers
 - 💡 **Content Assist** - Get type info, method hints and platform documentation at any code position
 - 🧪 **Query Validation** - Validate 1C query text in project context (syntax + semantic errors, optional DCS mode)
-- 🧩 **BSL Code Analysis** - Browse modules, inspect structure, read methods, search code, and analyze call hierarchy
+- 🧩 **BSL Code Analysis** - Browse modules, inspect structure, read/write methods, search code, and analyze call hierarchy
 - 🖼️ **Form Screenshot Capture** - Get PNG screenshots from the form WYSIWYG editor for visual inspection
 - 🚀 **Application Management** - Get applications, update database, launch in debug mode
 - 🎯 **Status Bar** - Real-time server status with tool name, execution time, and interactive controls
@@ -231,6 +231,7 @@ Add to `claude_desktop_config.json`:
 | `list_modules` | List all BSL modules in a project with module type and parent object |
 | `get_module_structure` | Get BSL module structure: procedures/functions, signatures, regions, parameters |
 | `read_module_source` | Read BSL module source code with line numbers (full file or line range) |
+| `write_module_source` | Write BSL source code to metadata object modules (searchReplace, replace, append) with syntax check |
 | `read_method_source` | Read a specific procedure/function from a BSL module by name |
 | `search_in_code` | Full-text/regex search across BSL modules with outputMode: full/count/files |
 | `get_method_call_hierarchy` | Find method callers or callees via semantic BSL analysis |
@@ -498,6 +499,35 @@ Add to `claude_desktop_config.json`:
 | `modulePath` | Yes | Path from `src/` folder (e.g. `CommonModules/MyModule/Module.bsl` or `Documents/SalesOrder/ObjectModule.bsl`) |
 | `startLine` | No | Start line number (1-based, inclusive). If omitted, reads from beginning |
 | `endLine` | No | End line number (1-based, inclusive). If omitted, reads to end |
+
+#### Write Module Source Tool
+
+**`write_module_source`** - Write BSL source code to 1C metadata object modules. Modes: searchReplace (content-based find and replace, default), replace (replace entire file), append (add to end). Specify modulePath or objectName + moduleType. Automatically checks BSL syntax before writing.
+
+**Parameters:**
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `projectName` | Yes | EDT project name |
+| `modulePath` | No* | Path from `src/` folder (e.g. `Documents/MyDoc/ObjectModule.bsl`). Alternative to objectName + moduleType |
+| `objectName` | No* | Full object name (e.g. `Document.MyDoc`, `CommonModule.MyModule`). Supports Russian names |
+| `moduleType` | No | Module type: `ObjectModule` (default), `ManagerModule`, `FormModule`, `CommandModule`, `RecordSetModule` |
+| `source` | Yes | BSL source code to write. For `searchReplace`: new code replacing `oldSource`. For `replace`: complete module content. For `append`: code to add |
+| `oldSource` | No** | Existing code to find and replace (required for `searchReplace` mode). Must match exactly one location in the file. Serves as proof that you have read the current file content |
+| `mode` | No | Write mode: `searchReplace` (default), `replace`, `append` |
+| `formName` | No | Form name, required when `moduleType=FormModule` |
+| `commandName` | No | Command name, required when `moduleType=CommandModule` |
+| `skipSyntaxCheck` | No | Skip BSL syntax validation (default: `false`). Checks balanced `Procedure/EndProcedure`, `Function/EndFunction`, `If/EndIf`, `While/EndDo`, `For/EndDo`, `Try/EndTry` |
+
+*One of `modulePath` or `objectName` is required.
+
+**Required for `searchReplace` mode.
+
+**Notes:**
+
+- **Content-based editing**: `searchReplace` mode finds `oldSource` in the file and replaces it with `source`. If `oldSource` is not found or matches multiple locations, the operation fails safely. This eliminates line-number drift issues when making multiple edits
+- Creates new module file if it does not exist (only in `replace` mode)
+- Preserves UTF-8 BOM encoding
+- Syntax check validates the complete resulting file, not just the inserted fragment
 
 #### Read Method Source Tool
 
@@ -868,6 +898,25 @@ groups:
 - Java 17+
 
 ## Version History
+
+<details>
+<summary><strong>1.25.3</strong> - Write module source tool with BSL syntax check</summary>
+
+- **New**: `write_module_source` tool — write BSL source code to metadata object modules
+  - Content-based editing: `searchReplace` mode (default) — find `oldSource` and replace with `source`, safe against line-number drift
+  - Additional modes: `replace` (full file), `append` (add to end)
+  - `searchReplace` fails safely if `oldSource` not found or matches multiple locations — proves the AI has read the current file
+  - Resolve module path from `objectName` + `moduleType` (e.g. `Document.MyDoc` + `ObjectModule`) — supports Russian metadata type names
+  - Supports `formName` and `commandName` parameters for form/command modules
+  - Creates new module files if they do not exist (in `replace` mode)
+  - Preserves UTF-8 BOM encoding, normalizes line endings
+- **New**: `BslSyntaxChecker` — lightweight BSL syntax validation before writing
+  - Checks balanced block keywords: `Procedure/EndProcedure`, `Function/EndFunction`, `If/EndIf`, `While/EndDo`, `For/EndDo`, `Try/EndTry`
+  - Supports both Russian and English keywords, case-insensitive
+  - Correctly handles `ElsIf`/`ElseIf` (not counted as new `If`), comments, multiline strings
+  - Blocks write on errors; bypass with `skipSyntaxCheck=true`
+
+</details>
 
 <details>
 <summary><strong>1.24.6</strong> - Symbol info tool, connection stability, bilingual FQN support</summary>
